@@ -1,0 +1,31 @@
+from dotenv import load_dotenv
+import os
+
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+load_dotenv()
+
+class Config:
+    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    API_URL = os.getenv("API_URL")
+    API_KEY = os.getenv("API_KEY")
+
+    DB_HOST = os.getenv("DB_HOST")
+    DB_PORT = os.getenv("DB_PORT")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+    DB_NAME = os.getenv("DB_NAME")
+    CATALOG_URL = os.getenv("CATALOG_URL")
+
+    DATABASE_URL = (
+        f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
+
+    engine = create_async_engine(DATABASE_URL, echo=True)
+    AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN not found in environment variables.")
+
+
+config = Config()
