@@ -7,7 +7,7 @@ from errors import AuthorizationError, RootIDError, UpdateCardsError
 from services.company_service import get_sorted_companies, get_companies_with_nomenclature, get_company_by_api_key, \
     get_all_companies
 from utils.core_utils import split_into_batches, is_weekend
-from services.brand_service import get_night_brands, get_night_brand_wbids
+from services.brand_service import get_night_brands, get_night_brand_wbids, get_all_brand_wbids_except_default
 
 REQUEST_DELAY_ONE_SECOND = 1
 REQUEST_DELAY_SIX_SECONDS = 6
@@ -29,19 +29,24 @@ async def run_all_from():
 
     await asyncio.sleep(600)
 
-    # 📥 Получение и запрос товаров с WB
     async with config.AsyncSessionLocal() as session:
-        for company in await get_all_companies(session):
-            wb_brand_ids = await get_night_brand_wbids(session, company.id, company.default_brand)
+        companies = await get_all_companies(session)
 
-            if not wb_brand_ids:
-                continue
+    client = WBClientAPI()
 
-            client = WBClientAPI()
+    for company in companies:
+        async with config.AsyncSessionLocal() as session:
+            if is_weekend():
+                wb_brand_ids = await get_night_brand_wbids(session, company.id, company.default_brand)
+            else:
+                wb_brand_ids = await get_all_brand_wbids_except_default(session, company.id, company.default_brand)
 
-            products = await client.get_all_data_by_company_id_and_brands(company.id, wb_brand_ids)
-            print(f"📦 {len(products)} товаров найдено для компании {company.name} с ночными брендами.")
+        if not wb_brand_ids:
+            print(f"⛔️ Нет брендов для компании {company.name}")
+            continue
 
+        products = await client.get_all_data_by_company_id_and_brands(company.id, wb_brand_ids)
+        print(f"📦 {len(products)} товаров найдено для компании {company.name}")
 
 
 async def run_all_to():

@@ -26,3 +26,17 @@ async def get_night_brand_wbids(session, company_id: int, default_brand: str) ->
     )
     brands = result.scalars().all()
     return [brand.wbID for brand in brands]
+
+
+async def get_all_brand_wbids_except_default(session, company_id: int, default_brand: str) -> list[int]:
+    """
+    Возвращает WB ID всех брендов компании, кроме default_brand.
+    """
+    result = await session.execute(
+        select(Brand).where(
+            Brand.company_id == company_id,
+            Brand.name != default_brand
+        )
+    )
+    brands = result.scalars().all()
+    return [brand.wbID for brand in brands]
