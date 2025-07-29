@@ -14,6 +14,7 @@ REQUEST_DELAY_SIX_SECONDS = 6
 BATCH_LIMIT = 3000
 
 async def run_all_from():
+    error_send = []
     """Главная функция запуска логики."""
     if is_weekend():
         async with config.AsyncSessionLocal() as session:
@@ -25,7 +26,10 @@ async def run_all_from():
 
     all_cards = await process_cards()
     updated_cards, tg_messages = await process_brands(all_cards, night_brands)
-    error_send = await send_cards(updated_cards)
+    error_send.extend(tg_messages)
+
+    error_send_card = await send_cards(updated_cards)
+    error_send.extend(error_send_card)
 
     await asyncio.sleep(600)
 
@@ -47,6 +51,37 @@ async def run_all_from():
 
         products = await client.get_all_data_by_company_id_and_brands(company.id, wb_brand_ids)
         print(f"📦 {len(products)} товаров найдено для компании {company.name}")
+
+        product_root_ids = {p.get("root") for p in products if p.get("root")}
+
+        # Фильтруем карточки, которые нужно попробовать еще раз
+        retry_cards = [card for card in updated_cards if card.get("root_id") in product_root_ids]
+
+        if not retry_cards:
+            continue
+
+        failed_cards = []
+
+        for card in retry_cards:
+            root_id = card["root_id"]
+            try:
+                # Пытаемся выставить бренд повторно
+                updated_cards, tg_messages = await process_brands(all_cards, night_brands)
+                print(f"🔁 Повторно установлен бренд для root_id={root_id}")
+                error_send.extend(tg_messages)
+            except Exception as e:
+                print(f"❌ Ошибка повторной установки бренда root_id={root_id}: {e}")
+                failed_cards.append(card)
+
+        # Отправка ошибок в Telegram, если есть
+        if failed_cards:
+            messages = [
+                f"❗️ Не удалось установить бренд для root_id {card['root_id']} (API ключ: {card['api_key']})"
+                for card in failed_cards
+            ]
+            error_send.extend(messages)
+
+    return error_send
 
 
 async def run_all_to():
