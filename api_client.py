@@ -99,7 +99,7 @@ class WBClientAPI:
             "Content-Type": "application/json"
         }
 
-        payload = {"cards": cards}
+        payload = cards
 
         for attempt in range(1, self.max_retries + 1):
             try:

@@ -1,6 +1,6 @@
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from models import Nomenclature
 from models.company import Company
@@ -8,7 +8,14 @@ from models.brand import Brand
 
 
 async def get_all_companies(session) -> list[Company]:
-    result = await session.execute(select(Company))
+    stmt = (
+        select(Company)
+        .options(
+            selectinload(Company.default_brand),     # подгружаем отношение
+            # selectinload(Company.nomenclatures),   # ← раскомментируй, если используешь
+        )
+    )
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 async def get_sorted_companies(session: AsyncSession) -> list[Company]:
@@ -34,5 +41,13 @@ async def get_companies_with_nomenclature(session: AsyncSession) -> list[Company
 
 
 async def get_company_by_api_key(session, api_key: str):
-    result = await session.execute(select(Company).where(Company.api_key == api_key))
+    stmt = (
+        select(Company)
+        .options(
+            joinedload(Company.default_brand)  # или selectinload(Company.default_brand)
+        )
+        .where(Company.api_key == api_key)
+    )
+
+    result = await session.execute(stmt)
     return result.scalar_one_or_none()
