@@ -30,7 +30,7 @@ async def run_all_from() -> list[str]:
 
     # 1) Выставляем бренды
     updated_cards, tg_messages = await process_brands(all_cards, night_brands)
-    error_send.append("НЕ изменившиеся бренды")
+    error_send.append("Неизменившиеся  каточки:")
     error_send.extend(tg_messages)
     print(updated_cards)
 
@@ -48,6 +48,7 @@ async def run_all_from() -> list[str]:
     # 3) Отправляем подготовленные карточки
     error_send_card = await send_cards(prepared_cards)
     if error_send_card:
+        error_send.append("Ошибки:")
         error_send.extend(error_send_card)
 
     # 4) Пауза и повторная попытка для части карточек (как у вас было)
@@ -89,7 +90,9 @@ async def run_all_from() -> list[str]:
                 # Пытаемся выставить бренд повторно (ваша логика)
                 updated_cards, tg_messages = await process_brands(all_cards, night_brands)
                 print(f"🔁 Повторно установлен бренд для root_id={root_id}")
-                error_send.extend(tg_messages)
+                if tg_messages:
+                    error_send.append("Неизменившиеся  каточки:")
+                    error_send.extend(tg_messages)
 
                 retry_prepared = []
                 for c in updated_cards or []:
@@ -101,7 +104,7 @@ async def run_all_from() -> list[str]:
                     retry_prepared.append(p)
                 error_send = await send_cards(retry_prepared)
                 if error_send:
-                    error_send.append("RETRY")
+                    error_send.append("Ошибки при повторной отправке:")
                     failed_cards.extend(error_send)
 
             except Exception as e:
@@ -188,6 +191,7 @@ async def process_brands(all_cards: list[dict], night_brands: list[str]) -> tupl
     """
     updated_cards = []
     messages_for_telegram = []
+    already_added_msgs = set()
 
     for card in all_cards:
         brand = card.get("brand")
@@ -205,7 +209,10 @@ async def process_brands(all_cards: list[dict], night_brands: list[str]) -> tupl
         root_id = card.get("root") or "неизвестен"
 
         if brand == default_brand:
-            messages_for_telegram.append(f"🔸 RootID {root_id}: бренд остался {default_brand}")
+            msg = f"🔸 RootID {root_id}: бренд остался {default_brand}"
+            if msg not in already_added_msgs:
+                messages_for_telegram.append(msg)
+                already_added_msgs.add(msg)
             continue
 
         if brand in night_brands:
