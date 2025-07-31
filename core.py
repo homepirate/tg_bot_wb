@@ -39,7 +39,7 @@ async def run_all_from() -> list[str]:
     for card in (updated_cards or []):
         api_key = card.get("api_key")
         if not api_key:
-            print("Пропущена карточка без API-ключа")
+            print("run_all_from Пропущена карточка без API-ключа")
             continue
         payload = filter_card_top_level(card)   # убирает лишние поля и api_key из payload
         payload["api_key"] = api_key           # вернуть для группировки внутри send_cards
@@ -129,8 +129,9 @@ async def run_all_to():
     prepared_cards: list[dict[str, Any]] = []
     for card in cards_for_update or []:
         api_key = card.get("api_key")
+        card['root'] = card.get("imtID")
         if not api_key:
-            print("Пропущена карточка без API-ключа")
+            print("run_all_to Пропущена карточка без API-ключа")
             continue
         payload = filter_card_top_level(card)
         prepared_cards.append(payload)
@@ -153,7 +154,7 @@ async def process_cards():
         print(f"\n🔍 Компания: {company.name}")
         api_key = company.api_key  # или другой способ получить ключ
 
-        seen_root_ids = set()  # уникальность root_id внутри одной компании
+        seen_root_ids = set()  # уникальность root_id внутри одной компанииf
 
         for nom in company.nomenclatures:
             # безопасное приведение к int
@@ -316,7 +317,7 @@ async def send_cards(cards: list[dict]) -> list[str]:
     for card in cards:
         api_key = card.get("api_key")
         if not api_key:
-            print("Пропущена карточка без API-ключа")
+            print("send_cards Пропущена карточка без API-ключа")
             continue
         grouped_cards[api_key].append(card)
 

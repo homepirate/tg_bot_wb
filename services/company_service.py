@@ -1,4 +1,4 @@
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, joinedload
 
@@ -35,7 +35,7 @@ async def get_companies_with_nomenclature(session: AsyncSession) -> list[Company
     result = await session.execute(
         select(Company)
         .options(selectinload(Company.nomenclatures).selectinload(Nomenclature.company))
-        .order_by(desc(Company.cabinet_order))
+        .order_by(asc(Company.cabinet_order))
     )
     return list(result.scalars().all())
 

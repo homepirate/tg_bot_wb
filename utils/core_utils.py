@@ -29,7 +29,8 @@ ALLOWED_TOP_LEVEL_FIELDS = {
     "dimensions",
     "characteristics",
     "sizes",
-    "api_key",  # только для группировки, в payload не уходит
+    "api_key",
+    "core", # только для группировки, в payload не уходит
 }
 
 def filter_card_top_level(raw_card: dict[str, Any]) -> dict[str, Any]:
