@@ -43,5 +43,5 @@ def filter_card_top_level(raw_card: dict[str, Any]) -> dict[str, Any]:
     # 1) Оставляем только разрешённые ключи
     filtered = {k: raw_card[k] for k in ALLOWED_TOP_LEVEL_FIELDS if k in raw_card}
     # 2) Исключаем api_key из payload для API
-    payload_card = {k: v for k, v in filtered.items() if k != "api_key"}
-    return payload_card
+    # payload_card = {k: v for k, v in filtered.items() if k != "api_key"}
+    return filtered
