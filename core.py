@@ -135,7 +135,6 @@ async def run_all_to():
             continue
         payload = filter_card_top_level(card)
         prepared_cards.append(payload)
-    print(prepared_cards)
     error_send = await send_cards(prepared_cards)
     if error_send:
         errors.extend(error_send)
@@ -320,6 +319,8 @@ async def send_cards(cards: list[dict]) -> list[str]:
             print("send_cards Пропущена карточка без API-ключа")
             continue
         grouped_cards[api_key].append(card)
+
+    print(f"Карточки для отправки: {len(grouped_cards)}")
 
     for api_key, card_list in grouped_cards.items():
         print(f"\nОтправка карточек для api_key: {api_key}, всего: {len(card_list)}")
