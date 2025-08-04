@@ -171,8 +171,11 @@ async def process_cards():
             seen_root_ids.add(root_id)
 
             # вызов API (если у тебя api_key — это переменная с токеном)
-            cards = await client.get_cards_list(api_key=api_key, root_id=root_id)
-
+            try:
+                cards = await client.get_cards_list(api_key=api_key, root_id=root_id)
+            except Exception as e:
+                print(e)
+                return []
             for card in cards:
                 card["root"] = card["imtID"]
                 card["api_key"] = nom.company.api_key

@@ -42,12 +42,11 @@ class WBClientAPI:
 
     async def get_cards_list(self, api_key: str, root_id: int) -> list[dict]:
         """
-        Получает список карточек товаров по API-ключу и root_id.
-        Выполняет повторные попытки при ConnectionTimeoutError.
+        Получает список карточек по API-ключу и root_id.
         """
         url = f"{self.api_base_url}/content/v2/get/cards/list"
         headers = {
-            "Authorization": f"{api_key}",
+            "Authorization": api_key,
             "Content-Type": "application/json"
         }
 
@@ -70,27 +69,34 @@ class WBClientAPI:
                         if response.status == 200:
                             data = await response.json()
                             return data.get("cards", [])
+
                         elif response.status == 401:
                             print("❌ Ошибка авторизации (401): Неверный или просроченный токен.")
                             raise AuthorizationError("Неверный токен (401)")
+
                         elif response.status == 429:
-                            print("⏳ Превышен лимит запросов (429). Ожидание перед повтором...")
+                            print(f"⏳ Превышен лимит запросов (429). Попытка {attempt}/{self.max_retries}")
                             await asyncio.sleep(self.retry_delay * attempt)
+
+                        elif response.status >= 500:
+                            # WB серверная ошибка — логируем, пропускаем root_id
+                            text = await response.text()
+                            print(f"❌ root_id={root_id} — ошибка {response.status}: {text.strip()}")
+                            return []
+
                         else:
                             text = await response.text()
-                            msg = f"Ошибка по {root_id=} {response.status}: {text}"
-                            print("⚠️", msg)
+                            msg = f"root_id={root_id} ошибка {response.status}: {text.strip()}"
                             raise RootIDError(msg)
 
             except (asyncio.TimeoutError, ClientConnectionError) as e:
-                print(f"⏱️ Попытка {attempt}/{self.max_retries} — таймаут/ошибка соединения: {e}")
+                print(f"⏱️ Попытка {attempt}/{self.max_retries} — таймаут: {e}")
                 if attempt == self.max_retries:
-                    print("❌ Превышено число повторов. Пропускаем запрос.")
+                    print(f"❌ root_id={root_id}: превышено число повторов. Пропускаем.")
                     return []
-                await asyncio.sleep(self.retry_delay * attempt)  # экспоненциальная задержка
+                await asyncio.sleep(self.retry_delay * attempt)
 
         return []
-
 
     async def update_cards(self, api_key: str, cards: list[dict]) -> bool:
         url = f"{self.api_base_url}/content/v2/cards/update"
