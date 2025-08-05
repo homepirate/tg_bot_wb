@@ -1,6 +1,8 @@
 import asyncio
+from typing import Any, Coroutine
 
-from aiohttp import ClientTimeout, ClientConnectionError
+from aiohttp import ClientTimeout, ClientConnectionError, ClientResponse
+from aiohttp.web_response import Response
 
 from config import Config
 import aiohttp
@@ -98,13 +100,13 @@ class WBClientAPI:
 
         return []
 
-    async def update_cards(self, api_key: str, cards: list[dict]) -> bool:
+    async def update_cards(self, api_key: str, cards: list[dict]) -> tuple[bool, dict]:
         url = f"{self.api_base_url}/content/v2/cards/update"
         headers = {
             "Authorization": f"{api_key}",
             "Content-Type": "application/json"
         }
-
+        response = None
         payload = cards
 
         for attempt in range(1, self.max_retries + 1):
@@ -113,7 +115,7 @@ class WBClientAPI:
                     async with session.post(url, headers=headers, json=payload) as response:
                         if response.status == 200:
                             print(f"Карточки успешно обновлены. Кол-во: {len(cards)}")
-                            return True
+                            return True, await response.json()
                         elif response.status == 401:
                             print("Ошибка авторизации (401): Неверный или просроченный токен.")
                             raise AuthorizationError("Неверный токен (401)")
@@ -130,7 +132,7 @@ class WBClientAPI:
                     raise UpdateCardsError("Превышено число попыток отправки карточек")
                 await asyncio.sleep(self.retry_delay * attempt)
 
-        return False
+        return False, await response.json()
 
 
     async def get_filters_by_supplier(self, supplier_id: int) -> dict:

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections import defaultdict
 from typing import Any
 
@@ -334,7 +335,9 @@ async def send_cards(cards: list[dict]) -> list[str]:
             print(f"Отправка батча {idx}/{len(batches)} ({len(batch)} карточек)...")
 
             try:
-                success = await client.update_cards(api_key=api_key, cards=batch)
+                success, response = await client.update_cards(api_key=api_key, cards=batch)
+                errors.append("Ответ от сервера WB:")
+                errors.append(json.dumps(response, ensure_ascii=False, indent=2))
             except AuthorizationError as e:
                 raise e
             except UpdateCardsError as e:

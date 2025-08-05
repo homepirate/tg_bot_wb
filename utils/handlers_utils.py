@@ -85,7 +85,7 @@ async def run_action(message: Message, action: str):
             errors = await run_all_to()
             await message.answer("✅ All To завершено.")
             if errors:
-                errors_str = "\n".join(errors)
+                errors_str = "\n".join(map(str, errors))
                 await send_long_text(message, f"Ошибки:\n{errors_str}")  # <— отправка частями
         except AuthorizationError as e:
             await send_long_text(message, f"Ошибка авторизации\n{e}")
@@ -95,7 +95,7 @@ async def run_action(message: Message, action: str):
             errors = await run_all_from()
             await message.answer("✅ All From завершено.")
             if errors:
-                errors_str = "\n".join(errors)
+                errors_str = "\n".join(map(str, errors))
                 await send_long_text(message, f"{errors_str}")  # <— отправка частями
         except AuthorizationError as e:
             await send_long_text(message, f"Ошибка авторизации\n{e}")
