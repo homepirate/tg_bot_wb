@@ -1,55 +1,90 @@
+# scheduler/runner.py
+
 import asyncio
 import pytz
 from datetime import datetime, timedelta
-from typing import Callable
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy import select
+from models import Schedule
+from services.schedule_service import is_schedule_still_exists
 
-
-DAYS_MAPPING = {
-    "ПН": 0,
-    "ВТ": 1,
-    "СР": 2,
-    "ЧТ": 3,
-    "ПТ": 4,
-    "СБ": 5,
-    "ВС": 6,
+DAYS_MAPPING_REVERSE = {
+    0: "ПН",
+    1: "ВТ",
+    2: "СР",
+    3: "ЧТ",
+    4: "ПТ",
+    5: "СБ",
+    6: "ВС",
 }
 
-
-def schedule_weekly_task(day_str: str, time_str: str, callback: Callable, *args):
+def schedule_weekly_task(
+    session_maker: async_sessionmaker,
+    weekday: int,
+    hour: int,
+    minute: int,
+    user_id: int,
+    action: str,
+    callback,
+):
     """
-    Запускает задачу каждую неделю в указанный день и время по МСК.
-
-    :param day_str: День недели в формате "ПН", "ВТ", ...
-    :param time_str: Время запуска в формате "ЧЧ:ММ"
-    :param callback: Функция для запуска
-    :param args: Аргументы для callback
+    Запускает задачу каждую неделю в указанный день и время по МСК,
+    и перед исполнением проверяет, что задача всё ещё есть в БД.
     """
     msk = pytz.timezone("Europe/Moscow")
-
-    if day_str not in DAYS_MAPPING:
-        raise ValueError(f"Неверный день недели: {day_str}")
-
-    hour, minute = map(int, time_str.split(":"))
-    if not (0 <= hour < 24 and 0 <= minute < 60):
-        raise ValueError("Неверное время")
-
-    weekday_target = DAYS_MAPPING[day_str]
 
     async def run_periodically():
         while True:
             now = datetime.now(msk)
-            days_ahead = (weekday_target - now.weekday() + 7) % 7
+            days_ahead = (weekday - now.weekday() + 7) % 7
             target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0) + timedelta(days=days_ahead)
-
             if target_time <= now:
                 target_time += timedelta(days=7)
 
-            delay = (target_time - now).total_seconds()
-            await asyncio.sleep(delay)
+            await asyncio.sleep((target_time - now).total_seconds())
 
-            try:
-                await callback(*args)
-            except Exception as e:
-                print(f"[Ошибка задачи] {e}")
+            still_exists = await is_schedule_still_exists(
+                session_maker=session_maker,
+                user_id=user_id,
+                action=action,
+                weekday=weekday,
+                hour=hour,
+                minute=minute
+            )
+
+            if still_exists:
+                try:
+                    await callback(user_id, action)
+                except Exception as e:
+                    print(f"[Ошибка выполнения задачи] {e}")
+            else:
+                print(f"⛔️ Задача для user_id={user_id} удалена из БД, останавливаем.")
+                return
 
     asyncio.create_task(run_periodically())
+
+async def schedule_all_tasks(session_maker: async_sessionmaker, callback):
+    """
+    Инициализирует задачи из базы при запуске бота.
+    """
+    async with session_maker() as session:
+        result = await session.execute(select(Schedule))
+        schedules = result.scalars().all()
+
+        for schedule in schedules:
+            weekday = schedule.weekday
+            hour = schedule.time.hour
+            minute = schedule.time.minute
+            user_id = schedule.user_id
+            action = schedule.action
+
+            schedule_weekly_task(
+                session_maker=session_maker,
+                weekday=weekday,
+                hour=hour,
+                minute=minute,
+                callback=callback,
+                user_id=user_id,
+                action=action,
+            )
+            print(f"🔁 Задача восстановлена: user_id={user_id}, action={action}, {DAYS_MAPPING_REVERSE[weekday]} {hour:02}:{minute:02}")

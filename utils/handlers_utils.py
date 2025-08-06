@@ -1,9 +1,13 @@
+from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.types import Message
 
+from config import config
 from core import run_all_to, run_all_from
 from errors import AuthorizationError
 
-from typing import List, Iterable
+from typing import List
 
 TELEGRAM_LIMIT = 4096
 
@@ -69,35 +73,65 @@ def split_telegram_message(text: str, limit: int = TELEGRAM_LIMIT) -> List[str]:
     return [p for p in parts if p]
 
 
-async def send_long_text(message, text: str, *, parse_mode: str | None = None):
+async def send_long_text(
+    target: int | Message,
+    text: str,
+    *,
+    bot: Bot | None = None,
+    parse_mode: str | None = None
+):
     """
-    Отправляет text, разрезая по 4096 символов.
+    Отправляет длинный текст, разбивая его на части по 4096 символов.
+    Работает как с объектом Message, так и с user_id.
     """
-    for part in split_telegram_message(text):
-        await message.answer(part, parse_mode=parse_mode, disable_web_page_preview=True)
+    messages = split_telegram_message(text)
 
-
-
-async def run_action(message: Message, action: str):
-    if action == "all_to":
-        await message.answer("Запущен процесс All To...")
-        try:
-            errors = await run_all_to()
-            await message.answer("✅ All To завершено.")
-            if errors:
-                errors_str = "\n".join(map(str, errors))
-                await send_long_text(message, f"Ошибки:\n{errors_str}")  # <— отправка частями
-        except AuthorizationError as e:
-            await send_long_text(message, f"Ошибка авторизации\n{e}")
-    elif action == "all_from":
-        await message.answer("Запущен процесс All From...")
-        try:
-            errors = await run_all_from()
-            await message.answer("✅ All From завершено.")
-            if errors:
-                errors_str = "\n".join(map(str, errors))
-                await send_long_text(message, f"{errors_str}")  # <— отправка частями
-        except AuthorizationError as e:
-            await send_long_text(message, f"Ошибка авторизации\n{e}")
+    if isinstance(target, Message):
+        for msg in messages:
+            await target.answer(msg, parse_mode=parse_mode, disable_web_page_preview=True)
     else:
-        await message.answer("Неизвестная команда.")
+        if bot is None:
+            bot = Bot(token=config.BOT_TOKEN)
+        for msg in messages:
+            await bot.send_message(
+                chat_id=target,
+                text=msg,
+                parse_mode=parse_mode,
+                disable_web_page_preview=True
+            )
+
+async def run_action(target: int | Message, action: str):
+    """
+    Универсальный запуск действия по сообщению ИЛИ user_id.
+    """
+    if isinstance(target, Message):
+        user_id = target.from_user.id
+        send = target.answer
+    else:
+        user_id = target
+        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        send = lambda text: bot.send_message(chat_id=user_id, text=text)
+
+    try:
+        if action == "all_to":
+            await send("Запущен процесс All To...")
+            errors = await run_all_to()
+            await send("✅ All To завершено.")
+        elif action == "all_from":
+            await send("Запущен процесс All From...")
+            errors = await run_all_from()
+            await send("✅ All From завершено.")
+        else:
+            await send("Неизвестная команда.")
+            return
+
+        if errors:
+            errors_str = "\n".join(map(str, errors))
+            if isinstance(target, Message):
+                await send_long_text(target, f"Ошибки:\n{errors_str}")
+            else:
+                await bot.send_message(chat_id=user_id, text="⚠️ Были ошибки:")
+                await send_long_text(user_id, f"Ошибки:\n{errors_str}", bot=bot)
+
+    except AuthorizationError as e:
+        await send(f"Ошибка авторизации:\n{e}")

@@ -4,3 +4,4 @@ from .brand import Brand
 from .holiday import Holiday
 from .nomenclature import Nomenclature
 from .allowed_user import AllowedUser
+from .schedule import Schedule
