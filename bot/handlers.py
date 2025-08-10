@@ -10,7 +10,7 @@ from config import config
 from scheduler import schedule_weekly_task
 from services.schedule_service import save_schedule
 from utils.handlers_utils import run_action
-from .keyboards import main_menu, schedule_menu
+from .keyboards import main_menu, schedule_menu, mode_menu
 
 router = Router()
 
@@ -49,13 +49,38 @@ async def handle_all_from_entry(message: Message):
 async def handle_back(message: Message):
     await message.answer("Вы вернулись в главное меню.", reply_markup=main_menu)
 
+#
+# @router.message(F.text == "Запустить сейчас")
+# async def handle_run_now(message: Message):
+#     action = user_context.get(message.from_user.id)
+#     await run_action(message, action)
+#     await message.answer("Меню", reply_markup=main_menu)
+#
 
 @router.message(F.text == "Запустить сейчас")
 async def handle_run_now(message: Message):
     action = user_context.get(message.from_user.id)
+    if action == "all_from":
+        # показываем выбор режима
+        await message.answer("Выберите режим запуска:", reply_markup=mode_menu)
+        return
+    # обычный запуск all_to
     await run_action(message, action)
     await message.answer("Меню", reply_markup=main_menu)
 
+
+
+@router.message(F.text == "Режим: выходные")
+async def handle_mode_weekend(message: Message):
+    # запуск all_from в режиме выходных
+    await run_action(message, "all_from", weekend_override=True)
+    await message.answer("Меню", reply_markup=main_menu)
+
+@router.message(F.text == "Режим: будни")
+async def handle_mode_weekday(message: Message):
+    # запуск all_from в режиме будних
+    await run_action(message, "all_from", weekend_override=False)
+    await message.answer("Меню", reply_markup=main_menu)
 
 @router.message(F.text == "Задать расписание")
 async def handle_schedule_request(message: Message):

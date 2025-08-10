@@ -40,3 +40,19 @@ async def get_all_brand_wbids_except_default(session, company_id: int, default_b
     )
     brands = result.scalars().all()
     return [brand.wbID for brand in brands]
+
+
+async def is_night_brand(session: AsyncSession, company_id: int, brand_name: str) -> bool:
+    """
+    True, если бренд с именем brand_name для компании company_id помечен как ночной (is_daytime = False).
+    """
+    if not brand_name:
+        return False
+
+    stmt = select(Brand).where(
+        Brand.company_id == company_id,
+        Brand.name == brand_name,
+        Brand.is_daytime == False,
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None

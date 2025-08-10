@@ -21,8 +21,18 @@ class Config:
         f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
 
-    engine = create_async_engine(DATABASE_URL, echo=True)
-    AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    engine = create_async_engine(
+        DATABASE_URL,  # postgresql+asyncpg://...
+        pool_pre_ping=True,  # ← проверяет коннект перед использованием (пересоздаст при разрыве)
+        pool_recycle=1800,  # ← рецикл коннекта раз в 30 минут (меньше idle-timeout на сервере)
+        pool_size=5,
+        max_overflow=10,
+        echo=True,
+    )
+
+    AsyncSessionLocal = async_sessionmaker(
+        engine, expire_on_commit=False, class_=AsyncSession
+    )
 
     if not BOT_TOKEN:
         raise ValueError("BOT_TOKEN not found in environment variables.")

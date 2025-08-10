@@ -17,3 +17,11 @@ schedule_menu = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+mode_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Режим: выходные"), KeyboardButton(text="Режим: будни")],
+        [KeyboardButton(text="Меню")],
+    ],
+    resize_keyboard=True
+)

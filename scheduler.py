@@ -87,4 +87,7 @@ async def schedule_all_tasks(session_maker: async_sessionmaker, callback):
                 user_id=user_id,
                 action=action,
             )
-            print(f"🔁 Задача восстановлена: user_id={user_id}, action={action}, {DAYS_MAPPING_REVERSE[weekday]} {hour:02}:{minute:02}")
+            try:
+                print(f"🔁 Задача восстановлена: user_id={user_id}, action={action}, {DAYS_MAPPING_REVERSE[weekday]} {hour:02}:{minute:02}")
+            except Exception as e:
+                print(e)

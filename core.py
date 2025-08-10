@@ -7,55 +7,52 @@ from api_client import WBClientAPI
 from config import config
 from errors import AuthorizationError, RootIDError, UpdateCardsError
 from services.company_service import get_sorted_companies, get_companies_with_nomenclature, get_company_by_api_key, \
-    get_all_companies
+    get_all_companies, get_company_by_api_key_safe
 from utils.core_utils import split_into_batches, is_weekend, filter_card_top_level
-from services.brand_service import get_night_brands, get_night_brand_wbids, get_all_brand_wbids_except_default
+from services.brand_service import get_night_brands, get_night_brand_wbids, get_all_brand_wbids_except_default, \
+    is_night_brand
 
 REQUEST_DELAY_ONE_SECOND = 1
 REQUEST_DELAY_SIX_SECONDS = 6
 BATCH_LIMIT = 3000
 
-async def run_all_from() -> list[str]:
+async def run_all_from(*, weekend_override: bool | None = None) -> list[str]:
     error_send: list[str] = []
 
-    """Главная функция запуска логики."""
-    if await is_weekend():
-        async with config.AsyncSessionLocal() as session:
-            night_brands = await get_night_brands(session)
-            print(f"Получено ночных брендов: {len(night_brands)}")
+    # определяем режим
+    if weekend_override is None:
+        weekend = await is_weekend()
     else:
-        print("Сегодня не выходной — ночные бренды не обрабатываются.")
-        night_brands = []
+        weekend = weekend_override
+
+    if weekend:
+        print("Сегодня выходной (или выбран режим выходных) — применяем ночную логику брендов.")
+    else:
+        print("Сегодня будний (или выбран режим будних) — бренды приводим к default_brand.")
 
     all_cards = await process_cards()
 
-    # 1) Выставляем бренды
-    updated_cards, tg_messages = await process_brands(all_cards, night_brands)
-    error_send.append("Неизменившиеся  каточки:")
-    error_send.extend(tg_messages)
-    print(updated_cards)
+    updated_cards, tg_messages = await process_brands(all_cards, weekend)
+    if tg_messages:
+        error_send.append("Неизменившиеся  каточки:")
+        error_send.extend(tg_messages)
 
-    # 2) Готовим карточки к отправке: фильтруем верхний уровень и возвращаем api_key
     prepared_cards: list[dict[str, Any]] = []
     for card in (updated_cards or []):
         api_key = card.get("api_key")
         if not api_key:
             print("run_all_from Пропущена карточка без API-ключа")
             continue
-        payload = filter_card_top_level(card)   # убирает лишние поля и api_key из payload
-        payload["api_key"] = api_key           # вернуть для группировки внутри send_cards
+        payload = filter_card_top_level(card)
+        payload["api_key"] = api_key
         prepared_cards.append(payload)
 
-    # 3) Отправляем подготовленные карточки
     error_send_card = await send_cards(prepared_cards)
     if error_send_card:
         error_send.append("Ошибки:")
         error_send.extend(error_send_card)
 
-    # 4) Пауза и повторная попытка для части карточек (как у вас было)
     await asyncio.sleep(10)
-    # await asyncio.sleep(600)
-
 
     async with config.AsyncSessionLocal() as session:
         companies = await get_all_companies(session)
@@ -64,10 +61,14 @@ async def run_all_from() -> list[str]:
 
     for company in companies:
         async with config.AsyncSessionLocal() as session:
-            if await is_weekend():
-                wb_brand_ids = await get_night_brand_wbids(session, company.id, company.default_brand.name)
+            if weekend:
+                wb_brand_ids = await get_night_brand_wbids(
+                    session, company.id, company.default_brand.name
+                )
             else:
-                wb_brand_ids = await get_all_brand_wbids_except_default(session, company.id, company.default_brand.name)
+                wb_brand_ids = await get_all_brand_wbids_except_default(
+                    session, company.id, company.default_brand.name
+                )
 
         if not wb_brand_ids:
             print(f"⛔️ Нет брендов для компании {company.name}")
@@ -77,8 +78,6 @@ async def run_all_from() -> list[str]:
         print(f"📦 {len(products)} товаров найдено для компании {company.name}")
 
         product_root_ids = {p.get("root") for p in products if p.get("root")}
-
-        # Фильтруем карточки, которые нужно попробовать еще раз
         retry_cards = [card for card in (updated_cards or []) if card.get("root") in product_root_ids]
         if not retry_cards:
             continue
@@ -86,11 +85,10 @@ async def run_all_from() -> list[str]:
         failed_cards: list[dict[str, Any]] = []
 
         for card in retry_cards:
-            root_id = card["root_id"]
+            root_id = card.get("root_id") or card.get("root")
             try:
-                # Пытаемся выставить бренд повторно (ваша логика)
-                updated_cards, tg_messages = await process_brands(all_cards, night_brands)
-                print(f"🔁 Повторно установлен бренд для root_id={root_id}")
+                updated_cards, tg_messages = await process_brands(all_cards, weekend)  # <-- используем тот же weekend
+                print(f"🔁 Повторно обработан бренд для root_id={root_id}")
                 if tg_messages:
                     error_send.append("Неизменившиеся  каточки:")
                     error_send.extend(tg_messages)
@@ -103,22 +101,23 @@ async def run_all_from() -> list[str]:
                     p = filter_card_top_level(c)
                     p["api_key"] = api_key
                     retry_prepared.append(p)
-                error_send = await send_cards(retry_prepared)
-                if error_send:
+
+                resend_errors = await send_cards(retry_prepared)
+                if resend_errors:
                     error_send.append("Ошибки при повторной отправке:")
-                    failed_cards.extend(error_send)
+                    error_send.extend(resend_errors)
 
             except Exception as e:
-                print(f"❌ Ошибка повторной установки бренда root_id={root_id}: {e}")
+                print(f"❌ Ошибка повторной обработки бренда root_id={root_id}: {e}")
                 failed_cards.append(card)
 
-        # Отправка ошибок в Telegram, если есть
         if failed_cards:
             messages = [
-                f"❗️ Не удалось установить бренд для root_id {card['root_id']} (API ключ: {card.get('api_key', '—')})"
+                f"❗️ Не удалось обработать бренд для root_id {card.get('root_id') or card.get('root')} (API ключ: {card.get('api_key', '—')})"
                 for card in failed_cards
             ]
             error_send.extend(messages)
+
     return error_send
 
 async def run_all_to():
@@ -143,92 +142,119 @@ async def run_all_to():
 
 
 async def process_cards():
-    """Обработка компаний и их номенклатуры."""
+    """
+    Тянем карточки по компаниям/номенклатурам.
+    Записываем в карточку:
+      - api_key (для отправки)
+      - root
+      - company_id
+      - original_brand (из номенклатуры — это важно для выходных)
+    """
     client = WBClientAPI()
-    all_cards = []
+    all_cards: list[dict] = []
 
     async with config.AsyncSessionLocal() as session:
         companies = await get_companies_with_nomenclature(session)
 
     for company in companies:
         print(f"\n🔍 Компания: {company.name}")
-        api_key = company.api_key  # или другой способ получить ключ
+        api_key = company.api_key
 
-        seen_root_ids = set()  # уникальность root_id внутри одной компанииf
+        seen_root_ids = set()
 
         for nom in company.nomenclatures:
-            # безопасное приведение к int
             try:
                 root_id = int(nom.root_id)
             except (TypeError, ValueError):
                 print(f"Пропущен некорректный root_id: {nom.root_id}")
                 continue
 
-            # пропуск повторов
             if root_id in seen_root_ids:
                 print(f"⏩ Пропущен дубликат root_id: {root_id}")
                 continue
 
             seen_root_ids.add(root_id)
 
-            # вызов API (если у тебя api_key — это переменная с токеном)
             try:
                 cards = await client.get_cards_list(api_key=api_key, root_id=root_id)
             except Exception as e:
                 print(e)
                 return []
+
             for card in cards:
-                card["root"] = card["imtID"]
-                card["api_key"] = nom.company.api_key
+                card["root"] = card.get("imtID")
+                card["api_key"] = company.api_key
+                card["company_id"] = company.id
+                card["original_brand"] = nom.original_brand or ""
                 all_cards.append(card)
+
             print(f"📦 Получено карточек для root_id={root_id}: {len(cards)}")
+
+            await asyncio.sleep(REQUEST_DELAY_ONE_SECOND)
+
     return all_cards
 
-
-async def process_brands(all_cards: list[dict], night_brands: list[str]) -> tuple[list[dict], list[str]]:
+async def process_brands(all_cards: list[dict], weekend: bool) -> tuple[list[dict], list[str]]:
     """
-    Обрабатывает бренды в карточках.
-
-    Возвращает:
-    - список карточек, где бренд был изменён на default_brand,
-    - список сообщений для Telegram об уже корректных карточках.
+    Будни (weekend=False): всегда меняем бренд на default_brand, если отличается.
+    Выходной (weekend=True): берём текущий бренд карточки; если он ночной для company -> меняем на default_brand,
+                              иначе не трогаем.
     """
-    updated_cards = []
-    messages_for_telegram = []
-    already_added_msgs = set()
+    updated: list[dict] = []
+    msgs: list[str] = []
+    seen: set[str] = set()
 
-    for card in all_cards:
-        brand = card.get("brand")
-        api_key = card.get("api_key")
+    # одна сессия на все проверки ночных брендов (быстро и стабильно)
+    async with config.AsyncSessionLocal() as session:
+        companies_cache: dict[str, Any] = {}
+        night_cache: dict[tuple[int, str], bool] = {}
 
-        # Получение компании по API ключу
-        async with config.AsyncSessionLocal() as session:
-            company = await get_company_by_api_key(session, api_key)
+        for card in all_cards:
+            api_key = card.get("api_key")
+            company_id = card.get("company_id")
+            current_brand = (card.get("brand") or "").strip()
+            root_id = card.get("root") or "?"
 
-        if not company:
-            print(f"Компания с ключом {api_key} не найдена.")
-            continue
+            if not api_key or not company_id:
+                continue
 
-        default_brand = company.default_brand.name
-        root_id = card.get("root") or "неизвестен"
+            # безопасная обёртка: берём компанию через фабрику сессий (а не через открытую сессию!)
+            company = companies_cache.get(api_key)
+            if company is None:
+                company = await get_company_by_api_key_safe(config.AsyncSessionLocal, api_key)
+                companies_cache[api_key] = company
 
-        if brand == default_brand:
-            msg = f"🔸 RootID {root_id}: бренд остался {default_brand}"
-            if msg not in already_added_msgs:
-                messages_for_telegram.append(msg)
-                already_added_msgs.add(msg)
-            continue
+            if not company or not company.default_brand:
+                continue
 
-        if brand in night_brands:
-            # Ночной бренд — не трогаем
-            continue
+            default_brand = company.default_brand.name
 
-        # Заменить бренд на default_brand
-        card["brand"] = default_brand
-        updated_cards.append(card)
+            if not weekend:
+                # Будний день — всегда приводим к базовому бренду
+                if current_brand != default_brand:
+                    card["brand"] = default_brand
+                    updated.append(card)
+                else:
+                    m = f"🔸 RootID {root_id}: бренд уже {default_brand}"
+                    if m not in seen:
+                        msgs.append(m); seen.add(m)
+            else:
+                # Выходной — меняем только если текущий бренд ночной для этой компании
+                key = (company_id, current_brand)
+                is_night = night_cache.get(key)
+                if is_night is None:
+                    is_night = await is_night_brand(session, company_id, current_brand)
+                    night_cache[key] = is_night
 
-    return updated_cards, messages_for_telegram
+                if is_night and current_brand != default_brand:
+                    card["brand"] = default_brand
+                    updated.append(card)
+                elif not is_night:
+                    m = f"🔸 RootID {root_id}: '{current_brand}' не ночной — без изменений"
+                    if m not in seen:
+                        msgs.append(m); seen.add(m)
 
+    return updated, msgs
 
 async def get_all_product_from_catalog() -> list[dict]:
     all_products = []

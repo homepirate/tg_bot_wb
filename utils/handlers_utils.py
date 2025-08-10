@@ -100,16 +100,18 @@ async def send_long_text(
                 disable_web_page_preview=True
             )
 
-async def run_action(target: int | Message, action: str):
+async def run_action(message: Message | int, action: str, *, weekend_override: bool | None = None):
     """
-    Универсальный запуск действия по сообщению ИЛИ user_id.
+    Универсальный запуск экшенов как по Message, так и по user_id.
+    weekend_override применяется только для all_from.
     """
-    if isinstance(target, Message):
-        user_id = target.from_user.id
-        send = target.answer
+    if isinstance(message, Message):
+        send = message.answer
+        user_id = message.from_user.id
+        bot = None
     else:
-        user_id = target
-        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        user_id = message
+        bot = Bot(token=Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         send = lambda text: bot.send_message(chat_id=user_id, text=text)
 
     try:
@@ -118,8 +120,9 @@ async def run_action(target: int | Message, action: str):
             errors = await run_all_to()
             await send("✅ All To завершено.")
         elif action == "all_from":
-            await send("Запущен процесс All From...")
-            errors = await run_all_from()
+            mode_txt = "Режим: выходные" if weekend_override else ("Режим: будни" if weekend_override is False else "Режим: авто")
+            await send(f"Запущен процесс All From... ({mode_txt})")
+            errors = await run_all_from(weekend_override=weekend_override)
             await send("✅ All From завершено.")
         else:
             await send("Неизвестная команда.")
@@ -127,11 +130,12 @@ async def run_action(target: int | Message, action: str):
 
         if errors:
             errors_str = "\n".join(map(str, errors))
-            if isinstance(target, Message):
-                await send_long_text(target, f"Ошибки:\n{errors_str}")
+            # поддержка длинных сообщений
+            if isinstance(message, Message):
+                await send_long_text(message, f"Ошибки:\n{errors_str}")
             else:
-                await bot.send_message(chat_id=user_id, text="⚠️ Были ошибки:")
+                await send("⚠️ Были ошибки:")
                 await send_long_text(user_id, f"Ошибки:\n{errors_str}", bot=bot)
 
     except AuthorizationError as e:
-        await send(f"Ошибка авторизации:\n{e}")
+        await send(f"Ошибка авторизации\n{e}")
