@@ -111,7 +111,7 @@ async def run_action(message: Message | int, action: str, *, weekend_override: b
         bot = None
     else:
         user_id = message
-        bot = Bot(token=Config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         send = lambda text: bot.send_message(chat_id=user_id, text=text)
 
     try:
