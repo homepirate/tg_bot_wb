@@ -182,7 +182,7 @@ class WBClientAPI:
         """
         all_products = []
         page = 1
-        fbrand = ';'.join(map(str, wb_brand_ids))
+        fbrand = ";".join(map(str, wb_brand_ids)) if wb_brand_ids else None
 
         async with aiohttp.ClientSession() as session:
             while True:
@@ -190,8 +190,11 @@ class WBClientAPI:
                     f"{self.catalog_base_url}/sellers/v4/catalog"
                     f"?ab_testing=false&appType=1&curr=rub&dest=-1257786"
                     f"&hide_dtype=13;14&lang=ru&page={page}&sort=popular&spp=30"
-                    f"&supplier={company_id}&fbrand={fbrand}"
+                    f"&supplier={company_id}"
                 )
+                if fbrand:  # добавляем только если есть бренды
+                    url += f"&fbrand={fbrand}"
+
                 async with session.get(url) as response:
                     if response.status != 200:
                         print(f"⚠️ Ошибка запроса: {response.status}")
