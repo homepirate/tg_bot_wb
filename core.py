@@ -66,8 +66,11 @@ async def run_all_from(*, weekend_override: bool | None = None) -> list[str]:
                     session, company.id, company.default_brand.name
                 )
             else:
+                # wb_brand_ids = await get_all_brand_wbids_except_default(
+                #     session, company.id, company.default_brand.name
+                # )
                 wb_brand_ids = await get_all_brand_wbids_except_default(
-                    session, company.id, company.default_brand.name
+                    session, company.default_brand.name
                 )
 
         if not wb_brand_ids:

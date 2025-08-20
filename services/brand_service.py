@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models import Brand
@@ -41,6 +41,16 @@ async def get_all_brand_wbids_except_default(session, company_id: int, default_b
     brands = result.scalars().all()
     return [brand.wbID for brand in brands]
 
+
+async def get_all_brand_wbids_except_default(session, default_brand: str) -> list[int]:
+    """
+    Возвращает уникальные WB ID всех брендов (всех компаний), кроме default_brand.
+    """
+    result = await session.execute(
+        select(distinct(Brand.wbID)).where(Brand.name != default_brand)
+    )
+    wbids = result.scalars().all()
+    return list(wbids)
 
 async def is_night_brand(session: AsyncSession, company_id: int, brand_name: str) -> bool:
     """
