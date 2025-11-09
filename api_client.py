@@ -1,8 +1,7 @@
 import asyncio
-from typing import Any, Coroutine
+import random
 
-from aiohttp import ClientTimeout, ClientConnectionError, ClientResponse
-from aiohttp.web_response import Response
+from aiohttp import ClientTimeout, ClientConnectionError
 
 from config import Config
 import aiohttp
@@ -19,26 +18,76 @@ class WBClientAPI:
         self.max_retries = 5
         self.retry_delay = 2
 
+    async def _get_with_retries(self, session: aiohttp.ClientSession, url: str) -> dict | None:
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with session.get(url) as response:
+                    # 200 OK
+                    if response.status == 200:
+                        return await response.json()
+
+                    # 429 — превышен лимит: уважаем Retry-After, иначе backoff+джиттер
+                    if response.status == 429:
+                        ra = response.headers.get("Retry-After")
+                        if ra and ra.isdigit():
+                            delay = int(ra)
+                        else:
+                            delay = min(2 ** attempt, 60) + random.random()
+                        print(f"⏳ 429 на GET {url} → sleep {delay:.1f}s (attempt {attempt}/{self.max_retries})")
+                        await asyncio.sleep(delay)
+                        continue
+
+                    # 5xx — временные: пробуем ретраить
+                    if 500 <= response.status < 600:
+                        text = (await response.text())[:300]
+                        delay = min(2 ** attempt, 30) + random.random()
+                        print(f"⚠️ {response.status} на GET {url}: {text} → retry in {delay:.1f}s")
+                        await asyncio.sleep(delay)
+                        continue
+
+                    # Остальные коды — считаем фатальными
+                    text = (await response.text())[:300]
+                    print(f"❌ GET {url} вернул {response.status}: {text}")
+                    return None
+
+            except (asyncio.TimeoutError, ClientConnectionError) as e:
+                if attempt == self.max_retries:
+                    print(f"❌ GET {url}: исчерпаны попытки: {e}")
+                    return None
+                delay = min(2 ** attempt, 30) + random.random()
+                print(f"⏱️ GET {url}: {e} → retry in {delay:.1f}s (attempt {attempt}/{self.max_retries})")
+                await asyncio.sleep(delay)
+
+        return None
+
     async def get_all_data_by_company_id(self, company_id: int) -> list[dict]:
-        all_products = []
+        """
+        Пагинация по каталогу WB с ретраями и паузами при 429/5xx.
+        """
+        all_products: list[dict] = []
         page = 1
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=self.timeout) as session:
             while True:
-                url = f"{self.catalog_base_url}/sellers/v4/catalog?ab_testing=false&appType=1&curr=rub&dest=-1257786&hide_dtype=13;14&lang=ru&page={page}&sort=popular&spp=30&supplier={company_id}"
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        print(f"⚠️ Ошибка запроса: {response.status}")
-                        break
+                url = (
+                    f"{self.catalog_base_url}/sellers/v4/catalog"
+                    f"?ab_testing=false&appType=1&curr=rub&dest=-1257786"
+                    f"&hide_dtype=13;14&lang=ru&page={page}&sort=popular&spp=30"
+                    f"&supplier={company_id}"
+                )
 
-                    data = await response.json()
-                    products = data.get("products", [])
+                data = await self._get_with_retries(session, url)
+                if not data:  # ошибка после ретраев
+                    break
 
-                    if not products:
-                        break
+                products = data.get("products", [])
+                if not products:
+                    break
 
-                    all_products.extend(products)
-                    page += 1
+                all_products.extend(products)
+                page += 1
+
+                await asyncio.sleep(0.2)
 
         return all_products
 
