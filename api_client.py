@@ -112,7 +112,7 @@ class WBClientAPI:
                 f"&supplier={company_id}"
             )
 
-            data = await self._get_with_retries(self.session, url)
+            data = await self._get_with_retries(url)
             if not data:  # ошибка после ретраев
                 break
 
@@ -136,7 +136,7 @@ class WBClientAPI:
                     f"&supplier={company_id}"
                 )
 
-                data = await self._get_with_retries(self.session, url)
+                data = await self._get_with_retries(url)
                 if not data:
                     break
 
