@@ -126,6 +126,30 @@ class WBClientAPI:
 
                 await asyncio.sleep(0.2)
 
+        if not all_products:
+            print(f"🔁 Фолбэк на https://www.wildberries.ru/__internal/u-catalog для company_id={company_id}")
+            page = 1
+            async with aiohttp.ClientSession(timeout=self.timeout) as session:
+                while True:
+                    url = (
+                        f"https://www.wildberries.ru/__internal/u-catalog/sellers/v4/catalog"
+                        f"?ab_testing=false&appType=1&curr=rub&dest=-1257786"
+                        f"&hide_dtype=11&lang=ru&page={page}&sort=popular&spp=30"
+                        f"&supplier={company_id}"
+                    )
+
+                    data = await self._get_with_retries(session, url)
+                    if not data:
+                        break
+
+                    products = data.get("products", [])
+                    if not products:
+                        break
+
+                    all_products.extend(products)
+                    page += 1
+                    await asyncio.sleep(0.2)
+
         return all_products
 
     async def get_cards_list(self, api_key: str, root_id: int) -> list[dict]:
