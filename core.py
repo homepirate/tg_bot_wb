@@ -57,7 +57,6 @@ async def run_all_from(*, weekend_override: bool | None = None) -> list[str]:
     async with config.AsyncSessionLocal() as session:
         companies = await get_all_companies(session)
 
-    client = WBClientAPI()
 
     for company in companies:
         async with config.AsyncSessionLocal() as session:
@@ -76,8 +75,8 @@ async def run_all_from(*, weekend_override: bool | None = None) -> list[str]:
         if not wb_brand_ids:
             print(f"⛔️ Нет брендов для компании {company.name}")
             continue
-
-        products = await client.get_all_data_by_company_id_and_brands(company.id, wb_brand_ids)
+        async with WBClientAPI() as api:
+            products = await api.get_all_data_by_company_id_and_brands(company.id, wb_brand_ids)
         print(f"📦 {len(products)} товаров найдено для компании {company.name}")
 
         product_root_ids = {p.get("root") for p in products if p.get("root")}
@@ -179,7 +178,8 @@ async def process_cards():
             seen_root_ids.add(root_id)
 
             try:
-                cards = await client.get_cards_list(api_key=api_key, root_id=root_id)
+                async with WBClientAPI() as api:
+                    cards = await api.get_cards_list(api_key=api_key, root_id=root_id)
             except Exception as e:
                 print(e)
                 return []
@@ -261,7 +261,6 @@ async def process_brands(all_cards: list[dict], weekend: bool) -> tuple[list[dic
 
 async def get_all_product_from_catalog() -> list[dict]:
     all_products = []
-    api = WBClientAPI()
     companies = []
 
     async with config.AsyncSessionLocal() as session:
@@ -270,7 +269,8 @@ async def get_all_product_from_catalog() -> list[dict]:
     for company in companies:
         print(f"Обработка компании: {company.name} (ID: {company.company_id})")
 
-        company_products = await api.get_all_data_by_company_id(company.company_id)
+        async with WBClientAPI() as api:
+            company_products = await api.get_all_data_by_company_id(company.company_id)
         print(f" Найдено товаров: {len(company_products)}")
 
         for product in company_products:
@@ -283,7 +283,6 @@ async def get_all_product_from_catalog() -> list[dict]:
 
 
 async def get_and_update_brand_in_card(available_root_ids: list) -> tuple[list[dict], list[str]]:
-    client = WBClientAPI()
     errors = []
     updated_cards = []
     companies = []
@@ -315,7 +314,8 @@ async def get_and_update_brand_in_card(available_root_ids: list) -> tuple[list[d
             print(f"✅ Обрабатываем root_id: {root_id}")
 
             try:
-                cards = await client.get_cards_list(api_key=company.api_key, root_id=root_id)
+                async with WBClientAPI() as api:
+                    cards = await api.get_cards_list(api_key=company.api_key, root_id=root_id)
             except AuthorizationError as e:
                 raise e
             except RootIDError as e:
@@ -364,7 +364,8 @@ async def send_cards(cards: list[dict]) -> list[str]:
             print(f"Отправка батча {idx}/{len(batches)} ({len(batch)} карточек)...")
 
             try:
-                success, response = await client.update_cards(api_key=api_key, cards=batch)
+                async with WBClientAPI() as api:
+                    success, response = await api.update_cards(api_key=api_key, cards=batch)
                 errors.append("Ответ от сервера WB:")
                 errors.append(json.dumps(response, ensure_ascii=False, indent=2))
             except AuthorizationError as e:
