@@ -24,10 +24,13 @@ class WBClientAPI:
         self._limiter = HostRateLimiter(max_concurrent=2, base_min_interval=0.5, max_min_interval=2.5)
 
         self._default_headers = {
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/119 Safari/537.36",
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/120.0.0.0 Safari/537.36"),
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Origin": "https://www.wildberries.ru",
+            "Connection": "keep-alive",
         }
 
     async def __aenter__(self):
@@ -55,44 +58,67 @@ class WBClientAPI:
             )
         return self._session
 
-    async def _get_with_retries(self, url: str) -> dict | None:
+    async def _get_with_retries(self, url: str, *, referer: str | None = None) -> dict | None:
+        session = self.session
+        headers = {}
+        if referer:
+            headers["Referer"] = referer
+
         for attempt in range(1, self.max_retries + 1):
             try:
-                async with self._limiter:
-                    resp = await self.session.get(url)
+                resp = await session.get(url, headers=headers)
                 async with resp:
+                    ct = resp.headers.get("Content-Type", "")
+                    # 498 или HTML-заглушка → долгий сон
+                    if resp.status == 498:
+                        text = (await resp.text())[:200]
+                        print(f"🛑 498 anti-bot for {url}: {text[:80]}...")
+                        delay = min(15 * attempt, 90) + random.random()
+                        await asyncio.sleep(delay)
+                        continue
+
                     if resp.status == 200:
-                        self._limiter.relax()
-                        ct = resp.headers.get("Content-Type", "")
-                        return await (resp.json() if "json" in ct else resp.text())
+                        # если это HTML — антибот
+                        peek = await resp.text()
+                        if self._is_html_block(peek, ct):
+                            print(f"🧱 Anti-bot HTML for {url} (CT={ct or 'n/a'})")
+                            delay = min(15 * attempt, 90) + random.random()
+                            await asyncio.sleep(delay)
+                            continue
+                        # это JSON или текст JSON
+                        try:
+                            return await resp.json()
+                        except Exception:
+                            # вдруг отдали текст JSON без header
+                            import json
+                            return json.loads(peek)
 
                     if resp.status == 429:
-                        ra_hdr = resp.headers.get("Retry-After")
-                        ra = parse_retry_after(ra_hdr)
-                        if ra is None:
-                            ra = min(self.retry_delay * attempt, 90) + random.random()
-                        print(f"⏳ 429 for {url} → sleep {ra:.1f}s (attempt {attempt}/{self.max_retries})")
-                        self._limiter.punish()
-                        await asyncio.sleep(ra)
+                        ra = resp.headers.get("Retry-After")
+                        if ra and ra.isdigit():
+                            delay = float(ra)
+                        else:
+                            delay = min(5 * attempt, 90) + random.random()
+                        print(f"⏳ 429 for {url} → sleep {delay:.1f}s")
+                        await asyncio.sleep(delay)
                         continue
 
                     if resp.status in (408, 425, 500, 502, 503, 504):
-                        text = (await resp.text())[:200]
-                        delay = min(self.retry_delay * attempt, 60) + random.random()
-                        print(f"⚠️ {resp.status} {url}: {text} → retry in {delay:.1f}s")
+                        delay = min(5 * attempt, 60) + random.random()
+                        print(f"⚠️ {resp.status} for {url} → retry in {delay:.1f}s")
                         await asyncio.sleep(delay)
                         continue
 
                     text = (await resp.text())[:300]
-                    print(f"❌ GET {url} → {resp.status}: {text}")
+                    print(f"❌ {resp.status} for {url}: {text}")
                     return None
 
             except (asyncio.TimeoutError, ClientConnectionError) as e:
                 if attempt == self.max_retries:
-                    print(f"❌ GET {url}: exhausted retries: {e}")
+                    print(f"❌ exhausted for {url}: {e}")
                     return None
-                delay = min(self.retry_delay * attempt, 60) + random.random()
-                print(f"⏱️ GET {url}: {e} → retry in {delay:.1f}s (attempt {attempt}/{self.max_retries})")
+                delay = min(5 * attempt, 60) + random.random()
+                print(f"⏱️ {e} → retry in {delay:.1f}s")
                 await asyncio.sleep(delay)
 
         return None
@@ -317,3 +343,9 @@ class WBClientAPI:
                     page += 1
 
         return all_products
+
+    def _is_html_block(self, text: str, content_type: str | None) -> bool:
+        if content_type and "application/json" in content_type.lower():
+            return False
+        t = text.strip().lower()
+        return t.startswith("<!doctype html") or t.startswith("<html")
