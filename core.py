@@ -123,7 +123,8 @@ async def run_all_from(*, weekend_override: bool | None = None) -> list[str]:
     return error_send
 
 async def run_all_to():
-    products = await get_all_product_from_catalog()
+    # products = await get_all_product_from_catalog()
+    products = await process_cards() # теперь запрашиваем по API, а не со страницы
     root_ids = [product["root"] for product in products]
     print(f"Root_IDS {root_ids}")
     cards_for_update, errors = await get_and_update_brand_in_card(root_ids)
@@ -152,7 +153,6 @@ async def process_cards():
       - company_id
       - original_brand (из номенклатуры — это важно для выходных)
     """
-    client = WBClientAPI()
     all_cards: list[dict] = []
 
     async with config.AsyncSessionLocal() as session:
