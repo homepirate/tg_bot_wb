@@ -1,4 +1,7 @@
+import os
+
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
@@ -9,9 +12,14 @@ from utils.handlers_utils import run_action
 from .handlers import router as handlers_router
 
 async def start_bot():
+    proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+
+    session = AiohttpSession(proxy=proxy) if proxy else AiohttpSession()
+
     bot = Bot(
         token=Config.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session
     )
     dp = Dispatcher()
     dp.message.outer_middleware(DBAccessControlMiddleware(config.AsyncSessionLocal))

@@ -3,6 +3,7 @@ aiofiles==24.1.0
 aiogram==3.21.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.12.14
+aiohttp_socks==0.11.0
 aiosignal==1.4.0
 annotated-types==0.7.0
 async-timeout==5.0.1
@@ -25,6 +26,7 @@ pydantic==2.11.7
 pydantic_core==2.33.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
+python-socks==2.8.1
 pytz==2025.2
 requests==2.32.4
 six==1.17.0
