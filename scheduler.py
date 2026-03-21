@@ -1,11 +1,14 @@
 # scheduler/runner.py
 
 import asyncio
+import os
+
 import pytz
 from datetime import datetime, timedelta
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy import select
@@ -79,7 +82,10 @@ async def schedule_all_tasks(session_maker: async_sessionmaker, callback):
         schedules = result.scalars().all()
 
     # 2) Создаём бота один раз (aiogram 3.7+: parse_mode через default)
-    bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+
+    session = AiohttpSession(proxy=proxy) if proxy else AiohttpSession()
+    bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML), session=session)
 
     try:
         for schedule in schedules:
