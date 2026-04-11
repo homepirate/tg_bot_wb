@@ -100,7 +100,7 @@ async def send_long_text(
                 disable_web_page_preview=True
             )
 
-async def run_action(message: Message | int, action: str, *, weekend_override: bool | None = None):
+async def run_action(message: Message | int, action: str, *, bot: Bot | None = None, weekend_override: bool | None = None):
     """
     Универсальный запуск экшенов как по Message, так и по user_id.
     weekend_override применяется только для all_from.
@@ -111,7 +111,6 @@ async def run_action(message: Message | int, action: str, *, weekend_override: b
         bot = None
     else:
         user_id = message
-        bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         send = lambda text: bot.send_message(chat_id=user_id, text=text)
 
     try:
