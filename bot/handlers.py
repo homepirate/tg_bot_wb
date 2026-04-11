@@ -11,6 +11,7 @@ from scheduler import schedule_weekly_task
 from services.schedule_service import save_schedule
 from utils.handlers_utils import run_action
 from .keyboards import main_menu, schedule_menu, mode_menu
+from .dispatcher import bo
 
 router = Router()
 
@@ -116,6 +117,7 @@ async def handle_schedule_day_time(message: Message):
             callback=run_action,
             user_id=message.from_user.id,
             action=action,
+            bot=message.bot
         )
         await message.answer(
             f"✅ Задача для '{action}' запланирована на {day_str} {hour:02}:{minute:02} по МСК",
