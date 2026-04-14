@@ -182,7 +182,7 @@ async def process_cards():
                     cards = await api.get_cards_list(api_key=api_key, root_id=root_id)
             except Exception as e:
                 print(e)
-                return []
+                cards = []
 
             for card in cards:
                 card["root"] = card.get("imtID")
